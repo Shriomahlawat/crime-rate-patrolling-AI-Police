@@ -4,7 +4,7 @@ from sklearn.ensemble import RandomForestClassifier
 import joblib
 
 # Load dataset
-df = pd.read_csv("dataset.csv")
+df = pd.read_csv("crime.data.csv")
 
 # Clean data
 df = df.dropna()
