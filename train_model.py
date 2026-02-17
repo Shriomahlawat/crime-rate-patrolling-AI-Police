@@ -1,6 +1,6 @@
 @st.cache_resource
 def train_model():
-    df = pd.read_csv("dataset.csv")
+    df = pd.read_csv("crime.data.csv")
 
     # Convert Case Closed to numeric
     df["Case Closed"] = df["Case Closed"].map({"Yes": 1, "No": 0})
