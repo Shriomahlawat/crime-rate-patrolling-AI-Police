@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 import os
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
 
 # ---------------------------------------------------
 # PAGE CONFIG
@@ -11,7 +10,7 @@ from sklearn.model_selection import train_test_split
 st.set_page_config(page_title="AI Crime Predictor", layout="wide")
 
 # ---------------------------------------------------
-# PREMIUM DARK UI STYLE
+# TITLE & THEME
 # ---------------------------------------------------
 st.markdown("""
 <style>
@@ -31,33 +30,38 @@ st.markdown('<p class="big-title">🚨 AI Crime Prediction & Patrol System</p>',
 st.markdown("### Intelligent Crime Analysis & Case Closure Prediction")
 
 # ---------------------------------------------------
-# FRONT PAGE IMAGES
+# SHOW IMAGES (FROM ROOT FOLDER)
 # ---------------------------------------------------
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.image("assets/patrol.jpg", use_container_width=True)
+    if os.path.exists("patrol.jpg"):
+        st.image("patrol.jpg", use_container_width=True)
+    else:
+        st.warning("patrol.jpg not found")
 
 with col2:
-    st.image("assets/crime_scene.jpg", use_container_width=True)
+    if os.path.exists("crime_scene.jpg"):
+        st.image("crime_scene.jpg", use_container_width=True)
+    else:
+        st.warning("crime_scene.jpg not found")
 
 with col3:
-    st.image("assets/murder_alert.jpg", use_container_width=True)
+    if os.path.exists("murder_alert.jpg"):
+        st.image("murder_alert.jpg", use_container_width=True)
+    else:
+        st.warning("murder_alert.jpg not found")
 
 st.markdown("---")
 
 # ---------------------------------------------------
-# LOAD DATASET SAFELY
+# LOAD DATASET
 # ---------------------------------------------------
 if not os.path.exists("crime.data.csv"):
     st.error("crime.data.csv not found in repository!")
     st.stop()
 
-try:
-    df = pd.read_csv("crime.data.csv")
-except:
-    st.error("Error reading crime.data.csv. Check file format.")
-    st.stop()
+df = pd.read_csv("crime.data.csv")
 
 if df.empty:
     st.error("Dataset is empty!")
@@ -67,19 +71,15 @@ if df.empty:
 # PREPROCESSING
 # ---------------------------------------------------
 df["Case Closed"] = df["Case Closed"].map({"Yes": 1, "No": 0})
-
 df["Hour"] = pd.to_datetime(df["Time of Occurrence"]).dt.hour
 
-# Drop unnecessary columns
 df_model = df[[
     "Crime Code",
     "Victim Age",
     "Police Deployed",
     "Hour",
     "Case Closed"
-]]
-
-df_model = df_model.dropna()
+]].dropna()
 
 X = df_model.drop("Case Closed", axis=1)
 y = df_model["Case Closed"]
@@ -96,7 +96,7 @@ def train_model():
 model = train_model()
 
 # ---------------------------------------------------
-# PREDICTION UI
+# PREDICTION SECTION
 # ---------------------------------------------------
 st.header("🔍 Predict Case Closure Probability")
 
@@ -106,7 +106,6 @@ police_deployed = st.slider("Police Deployed", 0, 50)
 hour = st.slider("Hour of Crime", 0, 23)
 
 if st.button("Predict Case Status"):
-
     input_data = np.array([[crime_code, victim_age, police_deployed, hour]])
     prediction = model.predict(input_data)
 
@@ -118,16 +117,16 @@ if st.button("Predict Case Status"):
 st.markdown("---")
 
 # ---------------------------------------------------
-# ANALYTICS SECTION
+# ANALYTICS DASHBOARD
 # ---------------------------------------------------
 st.header("📊 Crime Analytics Dashboard")
 
 total_cases = len(df)
 closed_cases = df["Case Closed"].sum()
-unsolved = total_cases - closed_cases
+unsolved_cases = total_cases - closed_cases
 
 st.metric("Total Cases", total_cases)
 st.metric("Closed Cases", int(closed_cases))
-st.metric("Unsolved Cases", int(unsolved))
+st.metric("Unsolved Cases", int(unsolved_cases))
 
 st.markdown("Built by Shriom | AI Crime Prediction Project 🚀")
