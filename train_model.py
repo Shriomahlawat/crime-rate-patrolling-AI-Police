@@ -1,26 +1,48 @@
-import pandas as pd
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
-import joblib
+@st.cache_resource
+def train_model():
+    df = pd.read_csv("crime.data.csv")
 
-# Load dataset
-df = pd.read_csv("crime.data.csv")
+    # Convert Case Closed to numeric
+    df["Case Closed"] = df["Case Closed"].map({"Yes": 1, "No": 0})
 
-# Clean data
-df = df.dropna()
+    # Extract hour from Time of Occurrence
+    df["Hour"] = pd.to_datetime(df["Time of Occurrence"]).dt.hour
 
-# Change column names based on YOUR dataset
-features = df[["latitude", "longitude", "hour", "day"]]
-target = df["crime_occurred"]
+    # Convert categorical features
+    df = pd.get_dummies(df, columns=["City", "Crime Domain", "Weapon Used"], drop_first=True)
 
-# Train/Test split
-X_train, X_test, y_train, y_test = train_test_split(features, target, test_size=0.2)
+    # Features
+    X = df.drop(columns=[
+        "Report Number",
+        "Date Reported",
+        "Date of Occurrence",
+        "Time of Occurrence",
+        "Date Case Closed",
+        "Crime Description",
+        "Victim Gender",
+        "Case Closed"
+    ])
 
-# Train model
-model = RandomForestClassifier(n_estimators=200)
-model.fit(X_train, y_train)
+    y = df["Case Closed"]
 
-# Save model
-joblib.dump(model, "crime_model.pkl")
+    model = RandomForestClassifier(n_estimators=100)
+    model.fit(X, y)
 
-print("Model trained & saved successfully!")
+    return model, X.columns
+model, feature_columns = train_model()
+
+if st.button("Predict Case Closure Probability"):
+
+    input_dict = {}
+
+    for col in feature_columns:
+        input_dict[col] = 0
+
+    input_df = pd.DataFrame([input_dict])
+
+    prediction = model.predict(input_df)
+
+    if prediction[0] == 1:
+        st.success("✅ Case likely to be closed quickly")
+    else:
+        st.error("⚠ Case may remain unsolved")
