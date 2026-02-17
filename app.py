@@ -12,7 +12,7 @@ st.set_page_config(page_title="AI Crime Patrol System", layout="wide")
 # -------------------------
 @st.cache_resource
 def train_model():
-    df = pd.read_csv("dataset.csv")
+    df = pd.read_csv("crime.data.csv")
     df = df.dropna()
 
     X = df[["latitude", "longitude", "hour", "day"]]
