@@ -8,6 +8,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 from gtts import gTTS
 import tempfile
+import base64
 
 # ---------------------------------------------------
 # PAGE CONFIG
@@ -15,7 +16,7 @@ import tempfile
 st.set_page_config(page_title="AI Crime Intelligence System", layout="wide")
 
 # ---------------------------------------------------
-# PREMIUM DARK THEME
+# DARK THEME
 # ---------------------------------------------------
 st.markdown("""
 <style>
@@ -31,6 +32,14 @@ body {
 .section-title {
     font-size:26px;
     color:#ff4d4d;
+}
+@keyframes flash {
+  0% {background-color:#0f0f0f;}
+  50% {background-color:#8b0000;}
+  100% {background-color:#0f0f0f;}
+}
+.flash {
+  animation: flash 1s infinite;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -59,13 +68,6 @@ if not os.path.exists("crime.data.csv"):
 
 df = pd.read_csv("crime.data.csv")
 
-if df.empty:
-    st.error("Dataset is empty!")
-    st.stop()
-
-# ---------------------------------------------------
-# PREPROCESSING
-# ---------------------------------------------------
 df["Case Closed"] = df["Case Closed"].map({"Yes": 1, "No": 0})
 
 df["Hour"] = pd.to_datetime(
@@ -99,9 +101,7 @@ def train_model():
     model = RandomForestClassifier(n_estimators=150, random_state=42)
     model.fit(X_train, y_train)
 
-    predictions = model.predict(X_test)
-    accuracy = accuracy_score(y_test, predictions)
-
+    accuracy = accuracy_score(y_test, model.predict(X_test))
     return model, accuracy
 
 model, accuracy = train_model()
@@ -111,13 +111,43 @@ st.write(f"### 🎯 Model Accuracy: {accuracy*100:.2f}%")
 st.markdown("---")
 
 # ---------------------------------------------------
-# VOICE FUNCTION
+# CINEMATIC ALERT FUNCTION
 # ---------------------------------------------------
-def play_voice_alert(message):
+def play_cinematic_alert(message):
+
+    # 🔴 Flash Screen
+    st.markdown('<div class="flash"></div>', unsafe_allow_html=True)
+
+    # 🚔 Siren Sound
+    siren_url = "https://www.soundjay.com/misc/sounds/police-siren-01.mp3"
+
+    # 🎵 Crime Intro Theme
+    intro_url = "https://www.soundjay.com/button/beep-07.mp3"
+
+    # 🔊 Generate Voice
     tts = gTTS(text=message, lang='en')
     temp_audio = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
     tts.save(temp_audio.name)
-    st.audio(temp_audio.name)
+
+    with open(temp_audio.name, "rb") as f:
+        audio_bytes = f.read()
+        voice_base64 = base64.b64encode(audio_bytes).decode()
+
+    audio_html = f"""
+    <audio autoplay>
+        <source src="{siren_url}" type="audio/mp3">
+    </audio>
+
+    <audio autoplay>
+        <source src="{intro_url}" type="audio/mp3">
+    </audio>
+
+    <audio autoplay>
+        <source src="data:audio/mp3;base64,{voice_base64}" type="audio/mp3">
+    </audio>
+    """
+
+    st.markdown(audio_html, unsafe_allow_html=True)
 
 # ---------------------------------------------------
 # PREDICTION SECTION
@@ -145,63 +175,22 @@ if st.button("🚨 Predict Case Outcome"):
 
     if prediction[0] == 1:
         st.success("✅ Case Likely to be Closed")
-        play_voice_alert(
+        play_cinematic_alert(
             "Investigation update. The case is likely to be successfully closed. Police department is in control."
         )
     else:
-        st.error("⚠ High Risk: Case May Remain Unsolved")
-        play_voice_alert(
-            "Crime alert activated. High risk detected. Police units are being dispatched to the location immediately."
+        st.error("⚠ High Risk Crime Detected!")
+        play_cinematic_alert(
+            "Crime alert activated. High risk detected. Police units are being dispatched immediately."
         )
 
 st.markdown("---")
 
-# ---------------------------------------------------
-# ANALYTICS DASHBOARD
-# ---------------------------------------------------
-st.markdown('<p class="section-title">📊 Crime Analytics Dashboard</p>', unsafe_allow_html=True)
-
+st.subheader("📊 Crime Analytics Dashboard")
 col1, col2, col3 = st.columns(3)
 
-total_cases = len(df)
-closed_cases = df["Case Closed"].sum()
-unsolved_cases = total_cases - closed_cases
+col1.metric("Total Cases", len(df))
+col2.metric("Closed Cases", int(df["Case Closed"].sum()))
+col3.metric("Unsolved Cases", int(len(df) - df["Case Closed"].sum()))
 
-col1.metric("Total Cases", total_cases)
-col2.metric("Closed Cases", int(closed_cases))
-col3.metric("Unsolved Cases", int(unsolved_cases))
-
-st.markdown("---")
-
-# ---------------------------------------------------
-# CITY DISTRIBUTION
-# ---------------------------------------------------
-st.subheader("🏙 Top 10 Cities by Crime Count")
-city_counts = df["City"].value_counts().head(10)
-st.bar_chart(city_counts)
-
-# ---------------------------------------------------
-# CRIME DOMAIN PIE CHART
-# ---------------------------------------------------
-st.subheader("🧠 Crime Domain Distribution")
-domain_counts = df["Crime Domain"].value_counts().head(5)
-
-fig, ax = plt.subplots()
-ax.pie(domain_counts, labels=domain_counts.index, autopct='%1.1f%%')
-ax.set_title("Top Crime Domains")
-st.pyplot(fig)
-
-# ---------------------------------------------------
-# FEATURE IMPORTANCE
-# ---------------------------------------------------
-st.subheader("📈 Feature Importance")
-
-importance_df = pd.DataFrame({
-    "Feature": X.columns,
-    "Importance": model.feature_importances_
-}).sort_values(by="Importance", ascending=False)
-
-st.bar_chart(importance_df.set_index("Feature"))
-
-st.markdown("---")
-st.markdown("🚀 Built by Shriom | AI Crime Intelligence System")
+st.markdown("🚀 Built by Shriom | Cinematic Crime Intelligence System")
