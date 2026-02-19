@@ -2,8 +2,12 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import os
-from sklearn.ensemble import RandomForestClassifier
 import matplotlib.pyplot as plt
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+from gtts import gTTS
+import tempfile
 
 # ---------------------------------------------------
 # PAGE CONFIG
@@ -25,7 +29,7 @@ body {
     color:#ff2c2c;
 }
 .section-title {
-    font-size:28px;
+    font-size:26px;
     color:#ff4d4d;
 }
 </style>
@@ -35,21 +39,14 @@ st.markdown('<p class="big-title">🚨 AI Crime Intelligence & Prediction System
 st.markdown("### Advanced Crime Analytics & Case Closure Prediction")
 
 # ---------------------------------------------------
-# HERO IMAGES (ROOT FOLDER)
+# HERO IMAGES
 # ---------------------------------------------------
 col1, col2, col3 = st.columns(3)
 
-with col1:
-    if os.path.exists("patrol.jpg"):
-        st.image("patrol.jpg", use_container_width=True)
-
-with col2:
-    if os.path.exists("crime_scene.jpg"):
-        st.image("crime_scene.jpg", use_container_width=True)
-
-with col3:
-    if os.path.exists("murder_alert.jpg"):
-        st.image("murder_alert.jpg", use_container_width=True)
+for img, col in zip(["patrol.jpg", "crime_scene.jpg", "murder_alert.jpg"], [col1, col2, col3]):
+    with col:
+        if os.path.exists(img):
+            st.image(img, use_container_width=True)
 
 st.markdown("---")
 
@@ -95,11 +92,32 @@ y = df_model["Case Closed"]
 # ---------------------------------------------------
 @st.cache_resource
 def train_model():
-    model = RandomForestClassifier(n_estimators=150)
-    model.fit(X, y)
-    return model
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
 
-model = train_model()
+    model = RandomForestClassifier(n_estimators=150, random_state=42)
+    model.fit(X_train, y_train)
+
+    predictions = model.predict(X_test)
+    accuracy = accuracy_score(y_test, predictions)
+
+    return model, accuracy
+
+model, accuracy = train_model()
+
+st.write(f"### 🎯 Model Accuracy: {accuracy*100:.2f}%")
+
+st.markdown("---")
+
+# ---------------------------------------------------
+# VOICE FUNCTION
+# ---------------------------------------------------
+def play_voice_alert(message):
+    tts = gTTS(text=message, lang='en')
+    temp_audio = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+    tts.save(temp_audio.name)
+    st.audio(temp_audio.name)
 
 # ---------------------------------------------------
 # PREDICTION SECTION
@@ -116,7 +134,7 @@ with col2:
     police_deployed = st.slider("Police Deployed", 0, 50)
     hour = st.slider("Hour of Crime", 0, 23)
 
-if st.button("Predict Case Outcome"):
+if st.button("🚨 Predict Case Outcome"):
 
     input_data = np.array([[crime_code, victim_age, police_deployed, hour]])
 
@@ -127,8 +145,14 @@ if st.button("Predict Case Outcome"):
 
     if prediction[0] == 1:
         st.success("✅ Case Likely to be Closed")
+        play_voice_alert(
+            "Investigation update. The case is likely to be successfully closed. Police department is in control."
+        )
     else:
-        st.error("⚠ Case May Remain Unsolved")
+        st.error("⚠ High Risk: Case May Remain Unsolved")
+        play_voice_alert(
+            "Crime alert activated. High risk detected. Police units are being dispatched to the location immediately."
+        )
 
 st.markdown("---")
 
@@ -150,18 +174,16 @@ col3.metric("Unsolved Cases", int(unsolved_cases))
 st.markdown("---")
 
 # ---------------------------------------------------
-# CITY CRIME DISTRIBUTION
+# CITY DISTRIBUTION
 # ---------------------------------------------------
 st.subheader("🏙 Top 10 Cities by Crime Count")
-
 city_counts = df["City"].value_counts().head(10)
 st.bar_chart(city_counts)
 
 # ---------------------------------------------------
-# CRIME DOMAIN DISTRIBUTION
+# CRIME DOMAIN PIE CHART
 # ---------------------------------------------------
 st.subheader("🧠 Crime Domain Distribution")
-
 domain_counts = df["Crime Domain"].value_counts().head(5)
 
 fig, ax = plt.subplots()
@@ -172,14 +194,11 @@ st.pyplot(fig)
 # ---------------------------------------------------
 # FEATURE IMPORTANCE
 # ---------------------------------------------------
-st.subheader("📈 Feature Importance (Model Insight)")
-
-importances = model.feature_importances_
-features = X.columns
+st.subheader("📈 Feature Importance")
 
 importance_df = pd.DataFrame({
-    "Feature": features,
-    "Importance": importances
+    "Feature": X.columns,
+    "Importance": model.feature_importances_
 }).sort_values(by="Importance", ascending=False)
 
 st.bar_chart(importance_df.set_index("Feature"))
