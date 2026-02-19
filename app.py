@@ -1,142 +1,175 @@
-# --- BEGIN: DSA ROUTING / MAP SECTION ---
 import streamlit as st
-from geopy.geocoders import Nominatim
+import pandas as pd
+import numpy as np
+import os
+import matplotlib.pyplot as plt
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+from gtts import gTTS
+import tempfile
 import folium
 from streamlit_folium import st_folium
-import json
-import time
+import heapq
+import math
 
-# Try to import osmnx/networkx; if not available, we will fall back to ORS HTTP API
-try:
-    import osmnx as ox
-    import networkx as nx
-    OSMNX_AVAILABLE = True
-except Exception as e:
-    OSMNX_AVAILABLE = False
+# ---------------------------------------------------
+# PAGE CONFIG
+# ---------------------------------------------------
+st.set_page_config(page_title="AI Crime Intelligence System", layout="wide")
 
-# Optional: set your OpenRouteService API key here (fallback)
-ORS_API_KEY = st.secrets.get("ORS_API_KEY", None)  # store securely in Streamlit secrets or provide below
-# ORS_API_KEY = "your-openrouteservice-api-key-here"  # <- if not using secrets
+st.title("🚨 AI Crime Intelligence + Patrol Routing System")
 
-st.markdown("## 🗺️ DSA Patrol Routing — Shortest Path (Dijkstra)")
+# ---------------------------------------------------
+# LOAD DATASET
+# ---------------------------------------------------
+df = pd.read_csv("crime.data.csv")
 
-with st.expander("How this works (short)"):
-    st.write("""
-    - Enter Source and Destination addresses (place names) anywhere in India.
-    - We geocode them to lat/lon, build a local road graph (OpenStreetMap) and run Dijkstra to find the shortest path (edge weight = length).
-    - If osmnx is unavailable, we call OpenRouteService as fallback (requires ORS API key).
-    - The route is shown on a satellite map (ESRI tiles).  
-    """)
+df["Case Closed"] = df["Case Closed"].map({"Yes": 1, "No": 0})
+df["Hour"] = pd.to_datetime(df["Time of Occurrence"], errors="coerce").dt.hour
+df = df.dropna(subset=["Hour"])
 
-# Inputs
-col_a, col_b = st.columns(2)
-with col_a:
-    source_input = st.text_input("Source (address or place name)", value="Connaught Place, New Delhi")
-with col_b:
-    dest_input = st.text_input("Destination (address or place name)", value="India Gate, New Delhi")
+df_model = df[["Crime Code", "Victim Age", "Police Deployed", "Hour", "Case Closed"]]
 
-buffer_km = st.slider("Routing buffer radius (km)", min_value=1, max_value=10, value=3,
-                      help="Graph area radius around midpoint; increase if route is long / crosses wide area.")
+X = df_model.drop("Case Closed", axis=1)
+y = df_model["Case Closed"]
 
-run_route = st.button("Find Shortest Patrol Route (DSA)")
+# ---------------------------------------------------
+# TRAIN MODEL
+# ---------------------------------------------------
+@st.cache_resource
+def train_model():
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
+    model = RandomForestClassifier()
+    model.fit(X_train, y_train)
+    acc = accuracy_score(y_test, model.predict(X_test))
+    return model, acc
 
-def geocode_address(address, user_agent="crime-patrol-app"):
-    geolocator = Nominatim(user_agent=user_agent, timeout=10)
-    loc = geolocator.geocode(address)
-    if loc:
-        return (loc.latitude, loc.longitude)
-    return None
+model, accuracy = train_model()
 
-def plot_route_folium(route_coords, source_pt, dest_pt, zoom=12):
-    # ESRI Satellite tiles
-    tiles = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-    m = folium.Map(location=[(source_pt[0]+dest_pt[0])/2, (source_pt[1]+dest_pt[1])/2], zoom_start=zoom, tiles=tiles, attr='Esri')
-    folium.Marker(location=source_pt, tooltip="Source", icon=folium.Icon(color='green', icon='play')).add_to(m)
-    folium.Marker(location=dest_pt, tooltip="Destination", icon=folium.Icon(color='red', icon='flag')).add_to(m)
-    folium.PolyLine(locations=route_coords, color='yellow', weight=5, opacity=0.8).add_to(m)
-    return m
+st.write(f"🎯 Model Accuracy: {accuracy*100:.2f}%")
 
-def route_with_osmnx(src_latlon, dst_latlon, buffer_km=3):
-    # Build graph around midpoint with buffer radius (in meters)
-    mid_lat = (src_latlon[0] + dst_latlon[0]) / 2
-    mid_lon = (src_latlon[1] + dst_latlon[1]) / 2
-    # distance in meters
-    dist = int(buffer_km * 1000)
-    # get drive network
-    G = ox.graph_from_point((mid_lat, mid_lon), dist=dist, network_type='drive')
-    # get nearest nodes to source/dest
-    src_node = ox.nearest_nodes(G, src_latlon[1], src_latlon[0])
-    dst_node = ox.nearest_nodes(G, dst_latlon[1], dst_latlon[0])
-    # shortest path by length (Dijkstra)
-    route = nx.shortest_path(G, src_node, dst_node, weight='length')  # Dijkstra under the hood
-    # Extract coordinates
-    route_coords = []
-    for node in route:
-        point = (G.nodes[node]['y'], G.nodes[node]['x'])
-        route_coords.append(point)
-    length_m = nx.shortest_path_length(G, src_node, dst_node, weight='length')
-    return route_coords, length_m, G
+# ---------------------------------------------------
+# VOICE FUNCTION
+# ---------------------------------------------------
+def play_voice(message):
+    tts = gTTS(text=message, lang='en')
+    temp_audio = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+    tts.save(temp_audio.name)
+    st.audio(temp_audio.name, autoplay=True)
 
-def route_with_ors(src_latlon, dst_latlon, ors_key):
-    # Calls OpenRouteService Directions API
-    import openrouteservice
-    client = openrouteservice.Client(key=ors_key)
-    coords = ((src_latlon[1], src_latlon[0]), (dst_latlon[1], dst_latlon[0]))  # lon,lat
-    resp = client.directions(coords, profile='driving-car', format='geojson')
-    # parse geometry
-    geom = resp['features'][0]['geometry']['coordinates']  # list of [lon,lat]
-    route_coords = [(lat, lon) for lon, lat in geom]
-    length_m = resp['features'][0]['properties']['summary']['distance']
-    return route_coords, length_m, resp
+# ---------------------------------------------------
+# PREDICTION SECTION
+# ---------------------------------------------------
+st.header("🔍 Crime Prediction")
 
-if run_route:
-    with st.spinner("Geocoding addresses…"):
-        src = geocode_address(source_input)
-        dst = geocode_address(dest_input)
-    if not src or not dst:
-        st.error("Could not geocode source or destination. Try more specific addresses.")
+col1, col2 = st.columns(2)
+
+with col1:
+    crime_code = st.number_input("Crime Code", min_value=1)
+    victim_age = st.slider("Victim Age", 1, 100)
+
+with col2:
+    police_deployed = st.slider("Police Deployed", 0, 50)
+    hour = st.slider("Hour", 0, 23)
+
+if st.button("🚨 Predict Case Outcome"):
+
+    input_data = np.array([[crime_code, victim_age, police_deployed, hour]])
+    probability = model.predict_proba(input_data)[0][1] * 100
+    prediction = model.predict(input_data)
+
+    st.write(f"Closure Probability: {probability:.2f}%")
+
+    if prediction[0] == 1:
+        st.success("Case Likely Closed")
+        play_voice("Investigation successful. Case likely to be closed.")
     else:
-        st.success(f"Geocoded:\n Source: {src}\n Destination: {dst}")
+        st.error("High Risk Crime Detected!")
+        play_voice("Emergency alert. Police units dispatched immediately.")
 
-        # Try osmnx method first
-        if OSMNX_AVAILABLE:
-            try:
-                with st.spinner("Downloading map graph and computing Dijkstra route (OSM)… This can take 10–30s depending on area…"):
-                    route_coords, length_m, G = route_with_osmnx(src, dst, buffer_km=buffer_km)
-                st.success(f"Route found via OSM graph — length: {length_m:.0f} meters")
-                m = plot_route_folium(route_coords, src, dst, zoom=12)
-                st_map = st_folium(m, width=900, height=600)
-                # Optional: show DSA details
-                st.markdown("### DSA Notes (for viva)")
-                st.write("- Graph nodes:", len(G.nodes))
-                st.write("- Graph edges:", len(G.edges))
-                st.write("- Algorithm used: Dijkstra (shortest path by edge length). Complexity: O(E + V log V) with priority queue.")
-            except Exception as e:
-                st.error(f"OSM routing failed: {e}")
-                if ORS_API_KEY:
-                    st.info("Falling back to OpenRouteService (ORS).")
-                    try:
-                        route_coords, length_m, resp = route_with_ors(src, dst, ORS_API_KEY)
-                        st.success(f"Route found via ORS — length: {length_m:.0f} meters")
-                        m = plot_route_folium(route_coords, src, dst, zoom=12)
-                        st_folium(m, width=900, height=600)
-                    except Exception as e2:
-                        st.error(f"ORS fallback failed: {e2}")
-                else:
-                    st.info("No ORS API key provided. To use fallback routing, add ORS_API_KEY in Streamlit secrets or the code.")
-        else:
-            # osmnx not available — use ORS fallback if key present
-            if ORS_API_KEY:
-                try:
-                    with st.spinner("Routing via OpenRouteService…"):
-                        route_coords, length_m, resp = route_with_ors(src, dst, ORS_API_KEY)
-                    st.success(f"Route found via ORS — length: {length_m:.0f} meters")
-                    m = plot_route_folium(route_coords, src, dst, zoom=12)
-                    st_folium(m, width=900, height=600)
-                    st.markdown("### Note: OSMnx not available — using ORS directions API for routing.")
-                    st.markdown("Algorithm: ORS directed shortest path (server-side).")
-                except Exception as e:
-                    st.error(f"ORS routing failed: {e}")
-            else:
-                st.error("OSMNX is not available in this environment and no ORS API key provided. To enable routing install osmnx or set ORS_API_KEY in Streamlit secrets.")
-# --- END: DSA ROUTING / MAP SECTION ---
+# ---------------------------------------------------
+# ANALYTICS
+# ---------------------------------------------------
+st.header("📊 Crime Analytics")
+
+col1, col2, col3 = st.columns(3)
+col1.metric("Total Cases", len(df))
+col2.metric("Closed Cases", int(df["Case Closed"].sum()))
+col3.metric("Unsolved Cases", int(len(df) - df["Case Closed"].sum()))
+
+st.subheader("Top Cities")
+st.bar_chart(df["City"].value_counts().head(10))
+
+# ---------------------------------------------------
+# DSA PATROL ROUTING (NO API)
+# ---------------------------------------------------
+st.header("🗺️ Patrol Routing using Dijkstra Algorithm")
+
+st.write("This routing uses manual graph + Dijkstra algorithm (Pure DSA Implementation).")
+
+# Sample City Graph (Delhi simplified)
+graph = {
+    "A": {"B": 4, "C": 2},
+    "B": {"A": 4, "C": 5, "D": 10},
+    "C": {"A": 2, "B": 5, "D": 3},
+    "D": {"B": 10, "C": 3}
+}
+
+coordinates = {
+    "A": (28.6139, 77.2090),
+    "B": (28.6200, 77.2100),
+    "C": (28.6150, 77.2200),
+    "D": (28.6250, 77.2300)
+}
+
+def dijkstra(graph, start, end):
+    pq = [(0, start)]
+    distances = {node: float('inf') for node in graph}
+    distances[start] = 0
+    previous = {node: None for node in graph}
+
+    while pq:
+        current_distance, current_node = heapq.heappop(pq)
+
+        if current_node == end:
+            break
+
+        for neighbor, weight in graph[current_node].items():
+            distance = current_distance + weight
+            if distance < distances[neighbor]:
+                distances[neighbor] = distance
+                previous[neighbor] = current_node
+                heapq.heappush(pq, (distance, neighbor))
+
+    path = []
+    node = end
+    while node:
+        path.append(node)
+        node = previous[node]
+    path.reverse()
+
+    return path, distances[end]
+
+source_node = st.selectbox("Select Source", list(graph.keys()))
+dest_node = st.selectbox("Select Destination", list(graph.keys()))
+
+if st.button("Find Shortest Path"):
+
+    path, distance = dijkstra(graph, source_node, dest_node)
+
+    st.success(f"Shortest Distance: {distance}")
+    st.write("Path:", " → ".join(path))
+
+    m = folium.Map(location=coordinates[source_node], zoom_start=14)
+
+    route_coords = [coordinates[node] for node in path]
+
+    folium.PolyLine(route_coords, color="red", weight=5).add_to(m)
+
+    for node in path:
+        folium.Marker(coordinates[node], tooltip=node).add_to(m)
+
+    st_folium(m, width=800, height=500)
