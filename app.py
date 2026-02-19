@@ -8,7 +8,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 from gtts import gTTS
 import tempfile
-import base64
+import requests
 
 # ---------------------------------------------------
 # PAGE CONFIG
@@ -60,13 +60,6 @@ if not os.path.exists("crime.data.csv"):
 
 df = pd.read_csv("crime.data.csv")
 
-if df.empty:
-    st.error("Dataset is empty!")
-    st.stop()
-
-# ---------------------------------------------------
-# PREPROCESSING
-# ---------------------------------------------------
 df["Case Closed"] = df["Case Closed"].map({"Yes": 1, "No": 0})
 
 df["Hour"] = pd.to_datetime(
@@ -106,40 +99,28 @@ def train_model():
 model, accuracy = train_model()
 
 st.write(f"### 🎯 Model Accuracy: {accuracy*100:.2f}%")
-
 st.markdown("---")
 
 # ---------------------------------------------------
-# POLICE ALERT FUNCTION
+# AUDIO FUNCTION
 # ---------------------------------------------------
 def play_police_alert(message):
 
+    # Download siren sound
     siren_url = "https://www.soundjay.com/misc/sounds/police-siren-01.mp3"
+    siren_response = requests.get(siren_url)
+    siren_audio = siren_response.content
 
-    # Generate Voice
+    # Generate voice
     tts = gTTS(text=message, lang='en')
-    temp_audio = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
-    tts.save(temp_audio.name)
+    temp_voice = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+    tts.save(temp_voice.name)
 
-    with open(temp_audio.name, "rb") as f:
-        voice_bytes = f.read()
-        voice_base64 = base64.b64encode(voice_bytes).decode()
+    with open(temp_voice.name, "rb") as f:
+        voice_audio = f.read()
 
-    audio_html = f"""
-    <audio id="siren" autoplay>
-        <source src="{siren_url}" type="audio/mp3">
-    </audio>
-
-    <script>
-        var siren = document.getElementById("siren");
-        siren.onended = function() {{
-            var voice = new Audio("data:audio/mp3;base64,{voice_base64}");
-            voice.play();
-        }};
-    </script>
-    """
-
-    st.markdown(audio_html, unsafe_allow_html=True)
+    st.audio(siren_audio, format="audio/mp3", autoplay=True)
+    st.audio(voice_audio, format="audio/mp3", autoplay=True)
 
 # ---------------------------------------------------
 # PREDICTION SECTION
@@ -167,14 +148,12 @@ if st.button("🚨 Predict Case Outcome"):
 
     if prediction[0] == 1:
         st.success("✅ Case Likely to be Closed")
-        play_police_alert(
-            "Police update. Investigation under control. The case is likely to be closed successfully."
-        )
+        message = "Police update. Investigation under control. The case is likely to be closed successfully."
     else:
         st.error("⚠ High Risk Crime Detected!")
-        play_police_alert(
-            "Emergency alert. High risk crime detected. Police units are on the way immediately."
-        )
+        message = "Emergency alert. High risk crime detected. Police units are on the way immediately."
+
+    play_police_alert(message)
 
 st.markdown("---")
 
