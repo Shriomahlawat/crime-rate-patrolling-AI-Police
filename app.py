@@ -33,14 +33,6 @@ body {
     font-size:26px;
     color:#ff4d4d;
 }
-@keyframes flash {
-  0% {background-color:#0f0f0f;}
-  50% {background-color:#8b0000;}
-  100% {background-color:#0f0f0f;}
-}
-.flash {
-  animation: flash 1s infinite;
-}
 </style>
 """, unsafe_allow_html=True)
 
@@ -68,6 +60,13 @@ if not os.path.exists("crime.data.csv"):
 
 df = pd.read_csv("crime.data.csv")
 
+if df.empty:
+    st.error("Dataset is empty!")
+    st.stop()
+
+# ---------------------------------------------------
+# PREPROCESSING
+# ---------------------------------------------------
 df["Case Closed"] = df["Case Closed"].map({"Yes": 1, "No": 0})
 
 df["Hour"] = pd.to_datetime(
@@ -111,18 +110,12 @@ st.write(f"### 🎯 Model Accuracy: {accuracy*100:.2f}%")
 st.markdown("---")
 
 # ---------------------------------------------------
-# CINEMATIC ALERT FUNCTION
+# POLICE SIREN + VOICE FUNCTION
 # ---------------------------------------------------
-def play_cinematic_alert(message):
+def play_police_alert(message):
 
-    # 🔴 Flash Screen
-    st.markdown('<div class="flash"></div>', unsafe_allow_html=True)
-
-    # 🚔 Siren Sound
+    # 🚔 Police Siren (online)
     siren_url = "https://www.soundjay.com/misc/sounds/police-siren-01.mp3"
-
-    # 🎵 Crime Intro Theme
-    intro_url = "https://www.soundjay.com/button/beep-07.mp3"
 
     # 🔊 Generate Voice
     tts = gTTS(text=message, lang='en')
@@ -130,18 +123,14 @@ def play_cinematic_alert(message):
     tts.save(temp_audio.name)
 
     with open(temp_audio.name, "rb") as f:
-        audio_bytes = f.read()
-        voice_base64 = base64.b64encode(audio_bytes).decode()
+        voice_bytes = f.read()
+        voice_base64 = base64.b64encode(voice_bytes).decode()
 
+    # Autoplay siren + voice
     audio_html = f"""
     <audio autoplay>
         <source src="{siren_url}" type="audio/mp3">
     </audio>
-
-    <audio autoplay>
-        <source src="{intro_url}" type="audio/mp3">
-    </audio>
-
     <audio autoplay>
         <source src="data:audio/mp3;base64,{voice_base64}" type="audio/mp3">
     </audio>
@@ -175,22 +164,63 @@ if st.button("🚨 Predict Case Outcome"):
 
     if prediction[0] == 1:
         st.success("✅ Case Likely to be Closed")
-        play_cinematic_alert(
-            "Investigation update. The case is likely to be successfully closed. Police department is in control."
+        play_police_alert(
+            "Police update. Investigation under control. The case is likely to be closed successfully."
         )
     else:
         st.error("⚠ High Risk Crime Detected!")
-        play_cinematic_alert(
-            "Crime alert activated. High risk detected. Police units are being dispatched immediately."
+        play_police_alert(
+            "Emergency alert. High risk crime detected. Police units are on the way immediately."
         )
 
 st.markdown("---")
 
-st.subheader("📊 Crime Analytics Dashboard")
+# ---------------------------------------------------
+# ANALYTICS DASHBOARD
+# ---------------------------------------------------
+st.markdown('<p class="section-title">📊 Crime Analytics Dashboard</p>', unsafe_allow_html=True)
+
 col1, col2, col3 = st.columns(3)
 
-col1.metric("Total Cases", len(df))
-col2.metric("Closed Cases", int(df["Case Closed"].sum()))
-col3.metric("Unsolved Cases", int(len(df) - df["Case Closed"].sum()))
+total_cases = len(df)
+closed_cases = df["Case Closed"].sum()
+unsolved_cases = total_cases - closed_cases
 
-st.markdown("🚀 Built by Shriom | Cinematic Crime Intelligence System")
+col1.metric("Total Cases", total_cases)
+col2.metric("Closed Cases", int(closed_cases))
+col3.metric("Unsolved Cases", int(unsolved_cases))
+
+st.markdown("---")
+
+# ---------------------------------------------------
+# CITY DISTRIBUTION
+# ---------------------------------------------------
+st.subheader("🏙 Top 10 Cities by Crime Count")
+city_counts = df["City"].value_counts().head(10)
+st.bar_chart(city_counts)
+
+# ---------------------------------------------------
+# CRIME DOMAIN PIE CHART
+# ---------------------------------------------------
+st.subheader("🧠 Crime Domain Distribution")
+domain_counts = df["Crime Domain"].value_counts().head(5)
+
+fig, ax = plt.subplots()
+ax.pie(domain_counts, labels=domain_counts.index, autopct='%1.1f%%')
+ax.set_title("Top Crime Domains")
+st.pyplot(fig)
+
+# ---------------------------------------------------
+# FEATURE IMPORTANCE
+# ---------------------------------------------------
+st.subheader("📈 Feature Importance")
+
+importance_df = pd.DataFrame({
+    "Feature": X.columns,
+    "Importance": model.feature_importances_
+}).sort_values(by="Importance", ascending=False)
+
+st.bar_chart(importance_df.set_index("Feature"))
+
+st.markdown("---")
+st.markdown("🚀 Built by Shriom | AI Crime Intelligence System")
