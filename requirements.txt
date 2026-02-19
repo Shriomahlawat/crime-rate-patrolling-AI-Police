@@ -6,3 +6,9 @@ scikit-learn
 matplotlib
 gTTS
 requests
+osmnx
+networkx
+geopy
+folium
+streamlit-folium
+openrouteservice
