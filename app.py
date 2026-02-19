@@ -110,14 +110,13 @@ st.write(f"### 🎯 Model Accuracy: {accuracy*100:.2f}%")
 st.markdown("---")
 
 # ---------------------------------------------------
-# POLICE SIREN + VOICE FUNCTION
+# POLICE ALERT FUNCTION
 # ---------------------------------------------------
 def play_police_alert(message):
 
-    # 🚔 Police Siren (online)
     siren_url = "https://www.soundjay.com/misc/sounds/police-siren-01.mp3"
 
-    # 🔊 Generate Voice
+    # Generate Voice
     tts = gTTS(text=message, lang='en')
     temp_audio = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
     tts.save(temp_audio.name)
@@ -126,14 +125,18 @@ def play_police_alert(message):
         voice_bytes = f.read()
         voice_base64 = base64.b64encode(voice_bytes).decode()
 
-    # Autoplay siren + voice
     audio_html = f"""
-    <audio autoplay>
+    <audio id="siren" autoplay>
         <source src="{siren_url}" type="audio/mp3">
     </audio>
-    <audio autoplay>
-        <source src="data:audio/mp3;base64,{voice_base64}" type="audio/mp3">
-    </audio>
+
+    <script>
+        var siren = document.getElementById("siren");
+        siren.onended = function() {{
+            var voice = new Audio("data:audio/mp3;base64,{voice_base64}");
+            voice.play();
+        }};
+    </script>
     """
 
     st.markdown(audio_html, unsafe_allow_html=True)
